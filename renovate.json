@@ -20,6 +20,32 @@
         "/^[Rr]enovatebot/github-action/"
       ],
       "automerge": true
+    },
+    {
+      "description": "Test-only infrastructure ships nothing to production, so a bad version can only turn the required 'Build and Test (.NET)' check red, which already blocks the merge. That makes these self-policing, so all update types automerge including majors. EntityFrameworkCore.InMemory is deliberately NOT listed: although test-only, it belongs to the 'dotnet monorepo' group that bumps EF Core and the .NET runtime in lockstep, and matching one member would leak automerge onto that framework-wide PR.",
+      "matchManagers": [
+        "nuget"
+      ],
+      "matchDepNames": [
+        "/^[Xx]unit/",
+        "/^[Mm]icrosoft\\.NET\\.Test\\./",
+        "/^[Mm]icrosoft\\.Testing\\./",
+        "/^[Nn]Substitute/",
+        "/^[Aa]utoFixture/",
+        "/^[Cc]overlet/"
+      ],
+      "automerge": true
+    },
+    {
+      "description": "Build-time only: SourceLink and reproducible-build SDKs emit nothing at runtime, so a bad version fails the build rather than reaching production.",
+      "matchManagers": [
+        "nuget"
+      ],
+      "matchDepNames": [
+        "/^[Dd]ot[Nn]et\\.ReproducibleBuilds/",
+        "/^[Mm]icrosoft\\.SourceLink\\./"
+      ],
+      "automerge": true
     }
   ]
 }
