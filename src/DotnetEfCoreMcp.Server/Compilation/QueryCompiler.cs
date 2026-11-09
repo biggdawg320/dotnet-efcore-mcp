@@ -215,21 +215,38 @@ public sealed class QueryCompiler(QueryCompilationOptions options)
         paths.Add(target.AssemblyPath);
         foreach (var path in target.LoadedAssemblyPaths) paths.Add(path);
         AddAssemblyPath(typeof(QueryExecutionException).Assembly, paths);
-        AddAssemblyPath(typeof(Microsoft.EntityFrameworkCore.DbContext).Assembly, paths);
 
         // A target DbContext's own base class or public surface can reach types from any assembly
         // in SharedFrameworkAssemblyNames (e.g. IdentityDbContext<...> pulls in
-        // Microsoft.AspNetCore.Identity.EntityFrameworkCore) even when the target project's own
-        // build output does not carry a copy of it as a non-shared dependency (LoadedAssemblyPaths
-        // only tracks assemblies TargetAssemblyLoadContext itself loaded from disk - shared
-        // assemblies are deliberately excluded, see TargetAssemblyLoadContext.LoadedAssemblyPaths).
-        // Without this, compiling a UserQuery subclass of such a context fails with "is defined in
-        // an assembly that is not referenced" for every single query, not just ones referencing the
-        // shared type directly - the type appears in the DbContext's own inherited member surface.
+        // Microsoft.AspNetCore.Identity.EntityFrameworkCore, and every DbContext pulls in EF Core
+        // itself) even when the target project's own build output does not carry a copy of it as a
+        // non-shared dependency (LoadedAssemblyPaths only tracks assemblies TargetAssemblyLoadContext
+        // itself loaded from disk - shared assemblies are deliberately excluded, see
+        // TargetAssemblyLoadContext.LoadedAssemblyPaths). Without this, compiling a UserQuery
+        // subclass of such a context fails with "is defined in an assembly that is not referenced"
+        // for every single query, not just ones referencing the shared type directly - the type
+        // appears in the DbContext's own inherited member surface.
+        //
+        // The target's own copy is preferred over the server's whenever the target's dependency
+        // closure carries one, because Roslyn's reference check requires an equal-or-higher
+        // version than the target assembly declares, which the server's copy fails whenever the
+        // target is ahead by even a patch (#118). This is safe because the runtime load path
+        // (TargetAssemblyLoadContext/CompiledQueryLoadContext) resolves these names by simple name
+        // via SharedAssemblyResolver regardless of which reference Roslyn compiled against.
         foreach (var assembly in AppDomain.CurrentDomain.GetAssemblies())
         {
             var name = assembly.GetName().Name;
-            if (name is not null && SharedFrameworkAssemblyNames.Value.Contains(name))
+            if (name is null || !SharedFrameworkAssemblyNames.Value.Contains(name))
+            {
+                continue;
+            }
+
+            var targetPath = target.Context.TryResolveSharedAssemblyPath(name);
+            if (targetPath is not null)
+            {
+                paths.Add(targetPath);
+            }
+            else
             {
                 AddAssemblyPath(assembly, paths);
             }

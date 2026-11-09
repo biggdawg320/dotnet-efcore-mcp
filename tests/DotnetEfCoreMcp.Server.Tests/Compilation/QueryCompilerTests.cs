@@ -135,6 +135,27 @@ public sealed class QueryCompilerTests
         Assert.NotEmpty(compiled.Pe);
     }
 
+    [Fact]
+    public async Task CompileAsync_TargetAheadOfServerEfCoreVersion_Compiles()
+    {
+        // Regression test for #118: GetReferences built its MetadataReference set from the
+        // server's own loaded EF Core assembly, so a target pinned one patch ahead (the
+        // NewerEfCoreApp fixture from #116) failed to compile every query with a Roslyn
+        // "higher version than referenced assembly" binding error, even though discovery against
+        // the same target already works.
+        var service = new AssemblyLoaderService();
+        var handle = service.Load(FixturePaths.NewerEfCoreAppDllPath);
+        var descriptor = DbContextScanner.FindDbContextTypes(handle.Assembly).Descriptors
+            .Single(d => d.Name == "CatalogDbContext");
+
+        var source = UserQuerySourceGenerator.Generate(descriptor.ClrType, "Products.Take(1)", "repro1");
+        var compiler = new QueryCompiler(new QueryCompilationOptions());
+
+        var compiled = await compiler.CompileAsync(source, handle, CancellationToken.None);
+
+        Assert.NotEmpty(compiled.Pe);
+    }
+
     [Theory]
     [InlineData("System.IO.File.ReadAllText(\"C:/secrets.txt\")", "compileboundaryio1")]
     [InlineData("new System.Net.Http.HttpClient()", "compileboundarynet1")]

@@ -187,9 +187,28 @@ internal sealed class TargetAssemblyLoadContext : AssemblyLoadContext
     /// default context.</summary>
     private Assembly? ResolveFromTarget(AssemblyName assemblyName)
     {
-        var assemblyPath = _resolver.ResolveAssemblyToPath(assemblyName) ?? _probe.ResolveAssembly(assemblyName);
+        var assemblyPath = ResolveDependencyPath(assemblyName);
         return assemblyPath is not null ? LoadAssemblyFromStream(assemblyPath) : null;
     }
+
+    private string? ResolveDependencyPath(AssemblyName assemblyName) =>
+        _resolver.ResolveAssemblyToPath(assemblyName) ?? _probe.ResolveAssembly(assemblyName);
+
+    /// <summary>Resolves the file path this target's own dependency closure would supply for a
+    /// <see cref="SharedFrameworkAssemblyNames"/> entry, without loading it into this context.
+    /// Used by <c>QueryCompiler.GetReferences</c> to prefer the target's own copy over the
+    /// server's for Roslyn's <c>MetadataReference</c> set: Roslyn's assembly-reference check is
+    /// the same equal-or-higher-version rule the CLR binder applies, which is stricter than
+    /// <see cref="SharedAssemblyResolver"/>'s simple-name resolution at runtime, so compiling
+    /// against the server's copy fails whenever the target references a newer patch (#118). The
+    /// target's own copy trivially satisfies its own requirement, and is safe to compile against
+    /// because the runtime load path still resolves these names by simple name regardless of
+    /// which reference Roslyn used. Returns <c>null</c> when the target's dependency closure
+    /// carries no copy of its own (e.g. an ASP.NET Core shared-framework assembly only this
+    /// probe's shared-framework directories could have found, and didn't), letting the caller
+    /// fall back to the server's.</summary>
+    internal string? TryResolveSharedAssemblyPath(string simpleName) =>
+        ResolveDependencyPath(new AssemblyName(simpleName));
 
     protected override IntPtr LoadUnmanagedDll(string unmanagedDllName)
     {
